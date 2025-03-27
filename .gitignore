@@ -12,7 +12,8 @@ env/
 # Ignore system files
 .DS_Store
 
-# ignore data folders
+# ignore data and output folders
 data/classified_posts/
 data/extracted_posts/
 data/geolocated_posts/
+outputs/
