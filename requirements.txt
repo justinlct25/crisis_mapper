@@ -1,0 +1,9 @@
+praw
+nltk
+pandas
+folium
+geopy
+matplotlib
+seaborn
+transformers
+scikit-learn
