@@ -13,14 +13,29 @@ def extract_reddit_posts_keywords(extracted_posts_csv=None):
     # Target subreddits where users often discuss distress/crisis
     subreddits = [
         "depression", "SuicideWatch", "mentalhealth", "offmychest",
-        "anxiety", "Needafriend", "depression_help", "KindVoice"
+        "anxiety", "Needafriend", "depression_help", "KindVoice",
+        "TrueOffMyChest", "confessions", "Vent", "Rant",
+        "ptsd", "CPTSD", "BPD", "MentalHealthSupport", "DecidingToBeBetter", "Anxietyhelp",
+        "ForeverAlone", "SocialAnxiety", "lonely",
+        "sad", "teenagers", "darkjokes", "DeadBedrooms"
     ]
+
 
     # Keywords to filter for relevance
     keywords = [
         "depressed", "anxiety", "panic attack", "suicidal", "overdose", "addiction",
         "mental breakdown", "can’t cope", "overwhelmed", "drinking problem", "need help",
-        "lonely", "isolated", "hopeless", "I want to die", "crying all day", "self harm", "relapse"
+        "lonely", "isolated", "hopeless", "I want to die", "crying all day", "self harm", "relapse", "kill myself",
+        "want to kill myself", "going to kill myself", "planning to end it all", "ending it tonight",
+        "taking my life", "thinking about ending it", "final goodbye", "this is my last post",
+        "tired of living", "life is meaningless", "I give up", "no reason to go on", "I'm done",
+        "everything hurts", "it’s over", "ready to go", "razor", "pills", "hanging", "jumping",
+        "carbon monoxide", "bridge", "I can’t do this anymore", "I don’t want to be here", "I just want it to stop",
+        "no point in living", "ending everything", "ready to die", "giving up", "goodbye everyone",
+        "saying goodbye", "this is it", "hope it's quick", "final post", "numb", "broken inside",
+        "everything is too much", "can’t take it anymore", "I’m worthless", "nothing matters",
+        "exhausted with life", "just want peace", "want to disappear", "nobody cares",
+        "kms", "kys", "unalive", "rope", "off myself"
     ]
 
     posts_data = []
