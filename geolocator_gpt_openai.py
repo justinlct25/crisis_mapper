@@ -2,24 +2,25 @@ import pandas as pd
 import config
 import time
 import random
+import openai
 from openai import OpenAI
 from helper import get_latest_file
 from datetime import datetime
 from geopy.geocoders import Nominatim
 import folium
 from folium.plugins import MarkerCluster
+import os
 
 # --- Setup ---
 geolocator = Nominatim(user_agent="geoapiCrisis")
 gpt_client = OpenAI(api_key=config.openai_key)
 MODEL = "gpt-3.5-turbo"  # or "o3-mini"
-MAX_TOKENS = 3500  # leave some headroom (e.g. context limit ~4096)
-AVG_TOKENS_PER_POST = 120  # conservative estimate
+MAX_TOKENS = 3500
+AVG_TOKENS_PER_POST = 120
 
 # --- GPT Batched Inference ---
 def batch_posts(posts, max_tokens=MAX_TOKENS, avg_tokens=AVG_TOKENS_PER_POST):
-    batch = []
-    all_batches = []
+    batch, all_batches = [], []
     current_tokens = 0
     for post in posts:
         if current_tokens + avg_tokens > max_tokens:
@@ -35,8 +36,7 @@ def batch_posts(posts, max_tokens=MAX_TOKENS, avg_tokens=AVG_TOKENS_PER_POST):
 
 def call_openai_batch(batch):
     numbered_posts = "\n".join([f"{i+1}. {text}" for i, text in enumerate(batch)])
-    prompt = f"""
-    Extract the most likely real-world location (town, city, state, or country) mentioned or implied in each of the following social media posts. 
+    prompt = f"""Extract the most likely real-world location (town, city, state, or country) mentioned or implied in each of the following social media posts. 
     Respond with one location per post as a numbered list. If no location can be inferred, respond with "Unknown".
 
     {numbered_posts}
@@ -48,21 +48,47 @@ def call_openai_batch(batch):
             temperature=0
         )
         raw = response.choices[0].message.content.strip()
-        return [line.split(". ", 1)[-1].strip() for line in raw.split("\n") if line]
+        parsed = [line.split(". ", 1)[-1].strip() for line in raw.split("\n") if line]
+
+        if len(parsed) != len(batch):
+            print(f"⚠️ Mismatch: expected {len(batch)}, got {len(parsed)}")
+            print("Raw response:\n", raw)
+            if len(parsed) < len(batch):
+                parsed += ["Unknown"] * (len(batch) - len(parsed))
+            else:
+                parsed = parsed[:len(batch)]
+
+        return parsed
     except Exception as e:
         print(f"GPT error: {e}")
         return ["Unknown"] * len(batch)
 
-def infer_locations_batched(texts):
+def infer_locations_batched(texts, full_df, latest_time):
     batches = batch_posts(texts)
     all_locations = []
-    total_batches = len(batches)
+    output_path = f"data/geolocated_posts/temp/temp_gpt_locations_{latest_time}.csv"
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    total_success_count = 0 
+
     for i, batch in enumerate(batches):
-        print(f"Inferring batch {i + 1}/{total_batches}...")
+        # print(f"Inferring batch {i + 1}/{len(batches)}...")
         locations = call_openai_batch(batch)
-        print(f"Batch {i + 1} result: {locations}")
+
+        batch_success_count = sum(1 for loc in locations if loc and loc.lower() != "unknown")
+        total_success_count += batch_success_count
+
+        # print(f"Batch {i + 1} result: {locations}")
+        # print(f"Total posts located so far: {total_success_count}/{len(all_locations) + len(batch)}")
+        print(f"Batch {i + 1}/{len(batches)}: {batch_success_count}/{len(batch)} located, "
+            f"Total located so far: {total_success_count}/{len(all_locations) + len(batch)}")
         all_locations.extend(locations)
-        time.sleep(1.2)  # be nice to the API
+
+        temp_df = full_df.iloc[len(all_locations) - len(locations):len(all_locations)].copy()
+        temp_df["detected_location"] = locations
+        temp_df.to_csv(output_path, mode='a', index=False, header=not os.path.exists(output_path) if i == 0 else False)
+
+        time.sleep(1.2)
+
     return all_locations
 
 # --- Main Geolocation Flow ---
@@ -71,11 +97,11 @@ def geolocate_posts_with_gpt(source='reddit', classified_posts_csv=None):
     print(f"Loading file: {latest_file}")
     df = pd.read_csv(latest_file)
 
-    print("Inferring locations with GPT in batches...")
-    clean_texts = df['clean_content'].fillna("").tolist()
-    detected_locations = infer_locations_batched(clean_texts)
-    df['detected_location'] = detected_locations
-    df = df[df['detected_location'].notna() & (df['detected_location'].str.lower() != 'unknown')]
+    print("Inferring locations with GPT...")
+    clean_texts = df["clean_content"].fillna("").tolist()
+    detected_locations = infer_locations_batched(clean_texts, df, latest_time)
+    df["detected_location"] = detected_locations
+    df = df[df["detected_location"].notna() & (df["detected_location"].str.lower() != "unknown")]
 
     print("Geocoding locations...")
     def geocode_location(name):
@@ -84,23 +110,23 @@ def geolocate_posts_with_gpt(source='reddit', classified_posts_csv=None):
             if location:
                 return pd.Series([location.latitude, location.longitude])
         except:
-            pass
+            return pd.Series([None, None])
         return pd.Series([None, None])
 
     latitudes, longitudes = [], []
-    for idx, loc in enumerate(df['detected_location']):
+    for idx, loc in enumerate(df["detected_location"]):
         time.sleep(random.uniform(1, 1.3))
         latlon = geocode_location(loc)
         latitudes.append(latlon[0])
         longitudes.append(latlon[1])
-        print(f"Geocoding progress: {idx+1}/{len(df)}", end='\r')
+        print(f"Geocoding: {idx+1}/{len(df)}", end="\r")
 
-    df['lat'], df['lon'] = latitudes, longitudes
-    df = df.dropna(subset=['lat', 'lon'])
+    df["lat"], df["lon"] = latitudes, longitudes
+    df = df.dropna(subset=["lat", "lon"])
 
     output_file = f"data/geolocated_posts/geolocated_{len(df)}_posts_{source}_by_gpt_{latest_time}.csv"
     df.to_csv(output_file, index=False)
-    print(f"Saved geolocated data to: {output_file}")
+    print(f"\nSaved geolocated data to: {output_file}")
 
     print("Generating heatmap...")
     map_ = folium.Map(location=[39.5, -98.35], zoom_start=4)
@@ -120,7 +146,7 @@ def geolocate_posts_with_gpt(source='reddit', classified_posts_csv=None):
         <b>URL:</b> <a href="{row['url']}" target="_blank">{row['url']}</a>
         """
         folium.CircleMarker(
-            location=(row['lat'], row['lon']),
+            location=(row["lat"], row["lon"]),
             radius=6,
             color=color,
             fill=True,
