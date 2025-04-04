@@ -18,10 +18,28 @@ def vader_avg_sentiment(text):
 
 
 def classify_posts_with_bert(source='reddit', extracted_posts_csv=None):
-    # Load the latest filtered posts file
-    latest_file, latest_time_formatted = get_latest_file('data/extracted_posts', 'extracted', extracted_posts_csv)
-    print(f"Loading latest extracted posts file: {latest_file}")
-    df = pd.read_csv(latest_file)
+    # Load the latest extracted posts file
+    latest_extracted_file, latest_time_formatted = get_latest_file('data/extracted_posts', 'extracted', extracted_posts_csv)
+    print(f"Loading latest extracted posts file: {latest_extracted_file}")
+    extracted_df = pd.read_csv(latest_extracted_file, comment='#')
+
+    # Load the latest classified posts file
+    try:
+        latest_classified_file, _ = get_latest_file('data/classified_posts', 'classified')
+        print(f"Loading latest classified posts file: {latest_classified_file}")
+        classified_df = pd.read_csv(latest_classified_file, comment='#')
+    except FileNotFoundError:
+        print("No previously classified posts found. Starting fresh.")
+        classified_df = pd.DataFrame(columns=extracted_df.columns)
+
+    # Filter out already classified posts
+    already_classified_ids = set(classified_df['id'])
+    new_posts_df = extracted_df[~extracted_df['id'].isin(already_classified_ids)]
+    print(f"Found {len(new_posts_df)} new posts to classify.")
+
+    if new_posts_df.empty:
+        print("No new posts to classify. Exiting.")
+        return
 
     # Load Sentence-BERT model
     model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -66,7 +84,7 @@ def classify_posts_with_bert(source='reddit', extracted_posts_csv=None):
     example_embeddings = torch.stack(example_embeddings)
 
     # Classify each post by similarity to risk examples
-    post_texts = df['clean_content'].tolist()
+    post_texts = new_posts_df['clean_content'].tolist()
     post_embeddings = []
     for text in tqdm(post_texts, desc="Encoding posts"):
         post_embeddings.append(model.encode(text, convert_to_tensor=True))
@@ -83,24 +101,29 @@ def classify_posts_with_bert(source='reddit', extracted_posts_csv=None):
         similarity_scores.append(float(scores[best_idx]))
 
     # Combine predicted labels and rounded similarity scores into a single column
-    df['risk_level_semantic'] = [
+    new_posts_df['risk_level_semantic'] = [
         f"{label} ({round(score, 2)})" for label, score in zip(predicted_labels, similarity_scores)
     ]
 
     # Add VADER sentiment scores
     print("Computing VADER sentiment scores...")
-    df['sentiment'] = [
-        vader_avg_sentiment(text) for text in tqdm(df['clean_content'], desc="Computing VADER sentiment")
+    new_posts_df['sentiment'] = [
+        vader_avg_sentiment(text) for text in tqdm(new_posts_df['clean_content'], desc="Computing VADER sentiment")
     ]
+
+    # Combine newly classified posts with already classified posts
+    combined_df = pd.concat([classified_df, new_posts_df], ignore_index=True)
 
     # Reorder columns
     columns = ['id', 'timestamp', 'sentiment', 'risk_level_semantic'] + \
-            [col for col in df.columns if col not in ['id', 'timestamp', 'sentiment', 'risk_level_semantic']]
-    df = df[columns]
+              [col for col in combined_df.columns if col not in ['id', 'timestamp', 'sentiment', 'risk_level_semantic']]
+    combined_df = combined_df[columns]
 
     # Save result with timestamp
-    output_file = f"data/classified_posts/classified_{len(df)}_{source}_posts_by_semantic_{latest_time_formatted}.csv"
-    df.to_csv(output_file, index=False)
+    output_file = f"data/classified_posts/classified_{len(combined_df)}_{source}_posts_by_semantic_{latest_time_formatted}.csv"
+    with open(output_file, 'w') as f:
+        f.write(f"# Extracted posts file: {latest_extracted_file}\n")
+        combined_df.to_csv(f, index=False)
     print(f"Saved: {output_file}")
 
 # Check command-line arguments
