@@ -7,6 +7,8 @@ from tqdm import tqdm
 import torch
 from datetime import datetime
 import sys
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 def vader_avg_sentiment(text):
     sentences = sent_tokenize(text)
@@ -15,6 +17,35 @@ def vader_avg_sentiment(text):
     sia = SentimentIntensityAnalyzer()
     scores = [sia.polarity_scores(sent)['compound'] for sent in sentences]
     return sum(scores) / len(scores)
+
+def generate_distribution_report(df, output_dir="outputs", table_filename="distribution_table.csv", plot_filename="distribution_plot.png"):
+    """
+    Generate a table and plot showing the distribution of posts by sentiment and risk category.
+    """
+    # Group by sentiment and risk level
+    distribution = df.groupby(['risk_level_semantic', 'sentiment']).size().reset_index(name='count')
+
+    # Save the distribution table as a CSV
+    distribution_table_file = f"{output_dir}/{table_filename}"
+    distribution.to_csv(distribution_table_file, index=False)
+    print(f"Distribution table saved to: {distribution_table_file}")
+
+    # Create a pivot table for visualization
+    pivot_table = distribution.pivot(index='risk_level_semantic', columns='sentiment', values='count').fillna(0)
+
+    # Plot the distribution as a heatmap
+    plt.figure(figsize=(10, 6))
+    sns.heatmap(pivot_table, annot=True, fmt=".0f", cmap="Blues", cbar=True)
+    plt.title("Distribution of Posts by Sentiment and Risk Level")
+    plt.xlabel("Sentiment")
+    plt.ylabel("Risk Level")
+    plt.tight_layout()
+
+    # Save the plot
+    distribution_plot_file = f"{output_dir}/{plot_filename}"
+    plt.savefig(distribution_plot_file)
+    plt.close()
+    print(f"Distribution plot saved to: {distribution_plot_file}")
 
 
 def classify_posts_with_bert(source='reddit', extracted_posts_csv=None):
@@ -38,8 +69,13 @@ def classify_posts_with_bert(source='reddit', extracted_posts_csv=None):
     print(f"Found {len(new_posts_df)} new posts to classify.")
 
     if new_posts_df.empty:
-        print("No new posts to classify. Exiting.")
+        print("No new posts to classify after filtering. Exiting.")
         return
+    
+    # Filter out rows with missing or invalid clean_content
+    new_posts_df = new_posts_df[new_posts_df['clean_content'].notna()]  # Remove rows with NaN
+    new_posts_df = new_posts_df[new_posts_df['clean_content'].str.strip() != ""]  # Remove empty strings
+    print(f"Filtered down to {len(new_posts_df)} posts with valid content.")
 
     # Load Sentence-BERT model
     model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -125,6 +161,10 @@ def classify_posts_with_bert(source='reddit', extracted_posts_csv=None):
         f.write(f"# Extracted posts file: {latest_extracted_file}\n")
         combined_df.to_csv(f, index=False)
     print(f"Saved: {output_file}")
+
+    # Generate distribution report
+    print("Generating distribution report...")
+    generate_distribution_report(combined_df, output_dir="outputs/distribution", table_filename=f"distribution_table_{len(combined_df)}_{source}_posts_by_semantic_{latest_time_formatted}", plot_filename=f"distribution_plot_{len(combined_df)}_{source}_posts_by_semantic_{latest_time_formatted}.png")
 
 # Check command-line arguments
 # if len(sys.argv) != 2 or sys.argv[1] not in ['r', 'x']:

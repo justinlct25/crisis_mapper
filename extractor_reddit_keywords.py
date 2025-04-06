@@ -17,7 +17,13 @@ def extract_reddit_posts_keywords(extracted_posts_csv=None):
         "TrueOffMyChest", "confessions", "Vent", "Rant",
         "ptsd", "CPTSD", "BPD", "MentalHealthSupport", "DecidingToBeBetter", "Anxietyhelp",
         "ForeverAlone", "SocialAnxiety", "lonely",
-        "sad", "teenagers", "darkjokes", "DeadBedrooms"
+        "sad", "teenagers", "darkjokes", "DeadBedrooms",
+        "mentalillness", "AnxietyDepression", "traumatoolbox",
+        "LifeAfterNarcissism", "BreakUps", "Divorce", "GriefSupport", "ChronicPain",
+        "stopdrinking", "OpiatesRecovery", "Leaves", "REDDITORSINRECOVERY",
+        "TeenagersAdvice", "HighSchool", "College",
+        "Lonely", "ForeverAloneDating", "Introvert",
+        "UnsentLetters", "JustVent"
     ]
 
 
@@ -57,6 +63,14 @@ def extract_reddit_posts_keywords(extracted_posts_csv=None):
     print(f"Extracting up to {total_target} posts from mental health-related subreddits...")
 
     for sub_name in subreddits:
+        try:
+            subreddit = reddit.subreddit(sub_name)
+            next(subreddit.new(limit=1))# trigger a fetch
+            # Proceed with fetching posts
+        except Exception as e:
+            print(f"Skipping subreddit '{sub_name}' due to error: {e}")
+            continue
+
         subreddit = reddit.subreddit(sub_name)
         count = 0
 
@@ -118,4 +132,5 @@ def extract_reddit_posts_keywords(extracted_posts_csv=None):
     print(f"Saved: {output_file}")
 
 # Example usage
-extract_reddit_posts_keywords()
+if __name__ == '__main__':
+    extract_reddit_posts_keywords()

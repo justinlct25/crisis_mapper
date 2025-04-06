@@ -29,7 +29,10 @@ def extract_timestamp_and_number(file):
         filename = os.path.basename(file)
         parts = filename.replace('.csv', '').split('_')
 
-        # Match pattern: extracted_<number>_reddit_posts_by_keywords_<YYYYMMDD>_<HHMMSS>
+        # Ensure the second part is numeric
+        if not parts[1].isdigit():
+            raise ValueError(f"Expected a numeric value, but got '{parts[1]}' in file: {file}")
+
         number = int(parts[1])  # '2949' from 'extracted_2949'
         timestamp_str = parts[-2] + '_' + parts[-1]  # '20250327_235605'
         timestamp = datetime.strptime(timestamp_str, '%Y%m%d_%H%M%S')
@@ -40,12 +43,12 @@ def extract_timestamp_and_number(file):
         return 0, datetime.min
 
 
-def get_latest_file(directory, prefix, extracted_posts_csv=None):
-    if extracted_posts_csv:
+def get_latest_file(directory, prefix, specified_file=None):
+    if specified_file:
         # If a specific file is provided, return it with its timestamp
-        if not os.path.exists(extracted_posts_csv):
-            raise FileNotFoundError(f"Specified file '{extracted_posts_csv}' does not exist.")
-        return extracted_posts_csv, None
+        if not os.path.exists(specified_file):
+            raise FileNotFoundError(f"Specified file '{specified_file}' does not exist.")
+        return specified_file, datetime.fromtimestamp(os.path.getmtime(specified_file)).strftime('%Y%m%d_%H%M%S')
 
     # Glob all files matching the prefix pattern
     files = glob(os.path.join(directory, f"{prefix}_*.csv"))
