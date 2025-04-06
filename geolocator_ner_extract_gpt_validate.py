@@ -12,6 +12,7 @@ from folium.plugins import MarkerCluster
 import os
 from tqdm import tqdm 
 from pathlib import Path
+import tiktoken
 
 # --- Setup ---
 # nlp = spacy.load("en_core_web_sm")
@@ -38,7 +39,17 @@ def batch_posts(posts, max_tokens=MAX_TOKENS, avg_tokens=AVG_TOKENS_PER_POST):
         all_batches.append(batch)
     return all_batches
 
-def call_openai_batch(batch):
+def count_tokens(text, model="gpt-3.5-turbo"):
+    """
+    Count the number of tokens in a given text for a specific model.
+    """
+    encoding = tiktoken.encoding_for_model(model)
+    return len(encoding.encode(text))
+
+def call_openai_batch(batch, max_context_tokens=16385, model="gpt-3.5-turbo"):
+    """
+    Process a batch of posts with GPT, ensuring the token count does not exceed the context limit.
+    """
     prompt = """For each post, choose the **one most appropriate and specific** location from the detected list. If no valid location applies, return "Unknown".
 
 Format:
@@ -74,20 +85,31 @@ Instructions:
 If no location fits the above criteria, return "Unknown".
 """
 
+    # Prepare the numbered inputs
     numbered_inputs = "\n".join([
         f"{i+1}. Post: {text} | Detected Locations: {gpes}" 
         for i, (text, gpes) in enumerate(batch)
     ])
 
+    # Calculate token count for the full message
     messages = [
         {"role": "system", "content": system_message},
         {"role": "user", "content": prompt + "\n" + numbered_inputs}
     ]
+    total_tokens = sum(count_tokens(message["content"], model=model) for message in messages)
 
+    # If token count exceeds the limit, split the batch
+    if total_tokens > max_context_tokens:
+        print(f"⚠️ Token limit exceeded ({total_tokens} tokens). Splitting batch...")
+        mid = len(batch) // 2
+        return call_openai_batch(batch[:mid], max_context_tokens, model) + \
+               call_openai_batch(batch[mid:], max_context_tokens, model)
+
+    # Proceed with GPT API call
     try:
-        for attempt in range(2):
+        for attempt in range(4):
             response = gpt_client.chat.completions.create(
-                model=MODEL,
+                model=model,
                 messages=messages,
                 temperature=0,
             )
@@ -211,8 +233,12 @@ def run_geolocation_pipeline(source='reddit', classified_posts_csv=None, geoloca
     else:
         batches = batch_posts(gpe_detected_posts_df[["clean_content", "detected_location"]].values.tolist())
         validated_locations = []
-        for batch in batches:
+        total_success_count = 0
+        for i, batch in enumerate(batches):
             result = call_openai_batch(batch)
+            batch_success_count = sum(1 for loc in result if loc and loc.lower() != "unknown")
+            total_success_count += batch_success_count
+            print(f"Batch {i + 1}/{len(batches)}: {batch_success_count}/{len(batch)} validated, Total validated so far: {total_success_count}/{len(validated_locations) + len(batch)}")
             validated_locations.extend(result)
             time.sleep(random.uniform(0.3, 0.8))
         gpe_validated_posts_df = gpe_detected_posts_df.copy()
@@ -237,11 +263,14 @@ def run_geolocation_pipeline(source='reddit', classified_posts_csv=None, geoloca
         gpe_validated_posts_df.to_csv(STEP4_OUTPUT_FILE, index=False)
 
     # --- Save Results ---
-    geolocated_only_posts_output_file = f"data/geolocated_posts/geolocated_{len(gpe_validated_posts_df)}_{source}_posts_by_ner_detect_gpt_validate_{latest_classified_time}.csv"
+    # Combine newly geolocated posts with previously geolocated posts
+    combined_geolocated_posts_df = pd.concat([gpe_validated_posts_df, already_geolocated_posts_df], ignore_index=True)
+
+    geolocated_only_posts_output_file = f"data/geolocated_posts/geolocated_{len(combined_geolocated_posts_df)}_{source}_posts_by_ner_detect_gpt_validate_{latest_classified_time}.csv"
     geolocated_only_posts_output_copy = os.path.join(intermediate_dir, os.path.basename(geolocated_only_posts_output_file))
 
-    gpe_validated_posts_df.to_csv(geolocated_only_posts_output_file, index=False)
-    gpe_validated_posts_df.to_csv(geolocated_only_posts_output_copy, index=False)
+    combined_geolocated_posts_df.to_csv(geolocated_only_posts_output_file, index=False)
+    combined_geolocated_posts_df.to_csv(geolocated_only_posts_output_copy, index=False)
 
     # Update unprocessed posts
     unprocessed_posts_df = unprocessed_posts_df.copy()
@@ -261,11 +290,11 @@ def run_geolocation_pipeline(source='reddit', classified_posts_csv=None, geoloca
     all_posts_df.to_csv(all_posts_output_file, index=False)
     all_posts_df.to_csv(all_posts_output_copy, index=False)
 
-    heatmap_output_file = f"outputs/heatmap/crisis_heatmap_{len(gpe_validated_posts_df)}_{source}_posts_by_ner_detect_gpt_validate_{latest_classified_time}.html"
+    heatmap_output_file = f"outputs/heatmap/crisis_heatmap_{len(combined_geolocated_posts_df)}_{source}_posts_by_ner_detect_gpt_validate_{latest_classified_time}.html"
     heatmap_output_copy = os.path.join(intermediate_dir, os.path.basename(heatmap_output_file))
 
-    generate_heatmap(gpe_validated_posts_df, output_file=heatmap_output_file)
-    generate_heatmap(gpe_validated_posts_df, output_file=heatmap_output_copy)
+    generate_heatmap(combined_geolocated_posts_df, output_file=heatmap_output_file)
+    generate_heatmap(combined_geolocated_posts_df, output_file=heatmap_output_copy)
 
 # --- Execute ---
 if __name__ == "__main__":

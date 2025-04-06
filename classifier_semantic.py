@@ -73,14 +73,14 @@ def classify_posts_with_bert(source='reddit', extracted_posts_csv=None):
         return
     
     # Filter out rows with missing or invalid clean_content
-    new_posts_df = new_posts_df[new_posts_df['clean_content'].notna()]  # Remove rows with NaN
-    new_posts_df = new_posts_df[new_posts_df['clean_content'].str.strip() != ""]  # Remove empty strings
+    new_posts_df = new_posts_df[new_posts_df['clean_content'].notna()]  
+    new_posts_df = new_posts_df[new_posts_df['clean_content'].str.strip() != ""]  
     print(f"Filtered down to {len(new_posts_df)} posts with valid content.")
 
-    # Load Sentence-BERT model
+    # Sentence-BERT model
     model = SentenceTransformer('all-MiniLM-L6-v2')
 
-    # Define example phrases for each risk level
+    # Example phrases for each risk level
     risk_examples = {
         "High": [
             "I want to kill myself",
@@ -129,8 +129,7 @@ def classify_posts_with_bert(source='reddit', extracted_posts_csv=None):
     predicted_labels = []
     similarity_scores = []
 
-    print("Computing similarities and classifying risk...")
-    for post_emb in tqdm(post_embeddings, desc="Classifying posts"):
+    for post_emb in tqdm(post_embeddings, desc="Classifying posts by risk level using semantic similarity"):
         scores = util.cos_sim(post_emb, example_embeddings)[0]
         best_idx = scores.argmax().item()
         predicted_labels.append(example_labels[best_idx])
@@ -155,7 +154,6 @@ def classify_posts_with_bert(source='reddit', extracted_posts_csv=None):
               [col for col in combined_df.columns if col not in ['id', 'timestamp', 'sentiment', 'risk_level_semantic']]
     combined_df = combined_df[columns]
 
-    # Save result with timestamp
     output_file = f"data/classified_posts/classified_{len(combined_df)}_{source}_posts_by_semantic_{latest_time_formatted}.csv"
     with open(output_file, 'w') as f:
         f.write(f"# Extracted posts file: {latest_extracted_file}\n")
@@ -164,7 +162,7 @@ def classify_posts_with_bert(source='reddit', extracted_posts_csv=None):
 
     # Generate distribution report
     print("Generating distribution report...")
-    generate_distribution_report(combined_df, output_dir="outputs/distribution", table_filename=f"distribution_table_{len(combined_df)}_{source}_posts_by_semantic_{latest_time_formatted}", plot_filename=f"distribution_plot_{len(combined_df)}_{source}_posts_by_semantic_{latest_time_formatted}.png")
+    # generate_distribution_report(combined_df, output_dir="outputs/distribution", table_filename=f"distribution_table_{len(combined_df)}_{source}_posts_by_semantic_{latest_time_formatted}", plot_filename=f"distribution_plot_{len(combined_df)}_{source}_posts_by_semantic_{latest_time_formatted}.png")
 
 # Check command-line arguments
 # if len(sys.argv) != 2 or sys.argv[1] not in ['r', 'x']:

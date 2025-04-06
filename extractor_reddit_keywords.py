@@ -7,10 +7,8 @@ from prawcore.exceptions import RequestException
 import time
 
 def extract_reddit_posts_keywords(extracted_posts_csv=None):
-    # Setup Reddit API client
     reddit = helper.bot_login()
 
-    # Target subreddits where users often discuss distress/crisis
     subreddits = [
         "depression", "SuicideWatch", "mentalhealth", "offmychest",
         "anxiety", "Needafriend", "depression_help", "KindVoice",
@@ -26,8 +24,6 @@ def extract_reddit_posts_keywords(extracted_posts_csv=None):
         "UnsentLetters", "JustVent"
     ]
 
-
-    # Keywords to filter for relevance
     keywords = [
         "depressed", "anxiety", "panic attack", "suicidal", "overdose", "addiction",
         "mental breakdown", "can’t cope", "overwhelmed", "drinking problem", "need help",
@@ -45,11 +41,11 @@ def extract_reddit_posts_keywords(extracted_posts_csv=None):
     ]
 
     posts_data = []
-    total_target = 5000  # Approximate number of posts to collect
+    total_target = 5000 
 
     # Load the last extracted posts CSV file if provided
     existing_ids = set()
-    original_df = pd.DataFrame()  # Placeholder for the original data
+    original_df = pd.DataFrame()  
     try:
         latest_file, latest_time_formatted = helper.get_latest_file('data/extracted_posts', 'extracted', extracted_posts_csv)
         print(f"Loading latest classified file: {latest_file}")
@@ -58,15 +54,13 @@ def extract_reddit_posts_keywords(extracted_posts_csv=None):
         print(f"Loaded {len(existing_ids)} existing post IDs from {latest_file}")
     except FileNotFoundError:
         print(f"File {latest_file} not found. Proceeding without filtering existing posts.")
-        
 
     print(f"Extracting up to {total_target} posts from mental health-related subreddits...")
 
     for sub_name in subreddits:
         try:
             subreddit = reddit.subreddit(sub_name)
-            next(subreddit.new(limit=1))# trigger a fetch
-            # Proceed with fetching posts
+            next(subreddit.new(limit=1)) # trigger a fetch to check whether the subreddit exists
         except Exception as e:
             print(f"Skipping subreddit '{sub_name}' due to error: {e}")
             continue
@@ -74,14 +68,14 @@ def extract_reddit_posts_keywords(extracted_posts_csv=None):
         subreddit = reddit.subreddit(sub_name)
         count = 0
 
-        # Retry mechanism for fetching submissions
-        for attempt in range(3):  # Retry up to 3 times
+        # Retry fetching submissions up to 3 times
+        for attempt in range(3): 
             try:
-                for submission in subreddit.new(limit=None):  # Use .new() to get recent posts
-                    if submission.stickied or submission.removed_by_category:
-                        continue  # skip pinned or removed posts
-                    if submission.id in existing_ids:
-                        continue  # skip posts that already exist in the last extracted file
+                for submission in subreddit.new(limit=None):  # Get recent posts
+                    if submission.stickied or submission.removed_by_category:   # Skip pinned or removed posts
+                        continue  
+                    if submission.id in existing_ids:   # Skip posts that already exist in the last extracted file
+                        continue  
                     combined_text = (submission.title or "") + " " + (submission.selftext or "")
                     if any(kw.lower() in combined_text.lower() for kw in keywords):
                         posts_data.append({
@@ -98,7 +92,7 @@ def extract_reddit_posts_keywords(extracted_posts_csv=None):
                     if len(posts_data) >= total_target:
                         break
                     print(f"Fetching from r/{sub_name}: {count} posts", end='\r')
-                break  # Exit retry loop if successful
+                break 
             except RequestException as e:
                 print(f"Request failed: {e}. Retrying in 5 seconds...")
                 time.sleep(5)
@@ -107,30 +101,26 @@ def extract_reddit_posts_keywords(extracted_posts_csv=None):
         if len(posts_data) >= total_target:
             break
 
-    # Clean text
     def clean_text(text):
         text = re.sub(r'[^\w\s]', '', text)
         text = re.sub(r'\s+', ' ', text)
         return text.lower()
 
-    # Create a DataFrame for the new posts
     new_posts_df = pd.DataFrame(posts_data)
     if not new_posts_df.empty:
         new_posts_df['clean_content'] = new_posts_df['content'].apply(clean_text)
 
-    # Combine the original and new posts, removing duplicates
+    # Combine the original already extracted posts and newly extracted posts, removing duplicates
     combined_df = pd.concat([original_df, new_posts_df]).drop_duplicates(subset='id', keep='last')
 
     # Sort rows by timestamp
     combined_df['timestamp'] = pd.to_datetime(combined_df['timestamp'], errors='coerce')
     combined_df = combined_df.sort_values(by='timestamp', ascending=False)
 
-    # Add timestamp to the file name
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     output_file = f"data/extracted_posts/extracted_{len(combined_df)}_reddit_posts_by_keywords_{timestamp}.csv"
     combined_df.to_csv(output_file, index=False)
     print(f"Saved: {output_file}")
 
-# Example usage
 if __name__ == '__main__':
     extract_reddit_posts_keywords()
