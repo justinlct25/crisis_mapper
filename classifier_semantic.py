@@ -9,6 +9,7 @@ from datetime import datetime
 import sys
 import matplotlib.pyplot as plt
 import seaborn as sns
+from generator_risk_sentiment_distribution import generate_distribution_report
 
 def vader_avg_sentiment(text):
     sentences = sent_tokenize(text)
@@ -18,37 +19,7 @@ def vader_avg_sentiment(text):
     scores = [sia.polarity_scores(sent)['compound'] for sent in sentences]
     return sum(scores) / len(scores)
 
-def generate_distribution_report(df, output_dir="outputs", table_filename="distribution_table.csv", plot_filename="distribution_plot.png"):
-    """
-    Generate a table and plot showing the distribution of posts by sentiment and risk category.
-    """
-    # Group by sentiment and risk level
-    distribution = df.groupby(['risk_level_semantic', 'sentiment']).size().reset_index(name='count')
-
-    # Save the distribution table as a CSV
-    distribution_table_file = f"{output_dir}/{table_filename}"
-    distribution.to_csv(distribution_table_file, index=False)
-    print(f"Distribution table saved to: {distribution_table_file}")
-
-    # Create a pivot table for visualization
-    pivot_table = distribution.pivot(index='risk_level_semantic', columns='sentiment', values='count').fillna(0)
-
-    # Plot the distribution as a heatmap
-    plt.figure(figsize=(10, 6))
-    sns.heatmap(pivot_table, annot=True, fmt=".0f", cmap="Blues", cbar=True)
-    plt.title("Distribution of Posts by Sentiment and Risk Level")
-    plt.xlabel("Sentiment")
-    plt.ylabel("Risk Level")
-    plt.tight_layout()
-
-    # Save the plot
-    distribution_plot_file = f"{output_dir}/{plot_filename}"
-    plt.savefig(distribution_plot_file)
-    plt.close()
-    print(f"Distribution plot saved to: {distribution_plot_file}")
-
-
-def classify_posts_with_bert(source='reddit', extracted_posts_csv=None):
+def classify_posts_with_bert(source='reddit', extracted_posts_csv=None, classified_posts_csv=None):
     # Load the latest extracted posts file
     latest_extracted_file, latest_time_formatted = get_latest_file('data/extracted_posts', 'extracted', extracted_posts_csv)
     print(f"Loading latest extracted posts file: {latest_extracted_file}")
@@ -56,7 +27,7 @@ def classify_posts_with_bert(source='reddit', extracted_posts_csv=None):
 
     # Load the latest classified posts file
     try:
-        latest_classified_file, _ = get_latest_file('data/classified_posts', 'classified')
+        latest_classified_file, _ = get_latest_file('data/classified_posts', 'classified', specified_file=classified_posts_csv)
         print(f"Loading latest classified posts file: {latest_classified_file}")
         classified_df = pd.read_csv(latest_classified_file, comment='#')
     except FileNotFoundError:
@@ -88,20 +59,27 @@ def classify_posts_with_bert(source='reddit', extracted_posts_csv=None):
             "I am planning to end it all",
             "I wish I was dead",
             "I can't live like this anymore"
+            "Ending it all soon",
+            "I've written my goodbye note",
+            "I bought pills today"
         ],
         "Moderate": [
             "I feel lost",
             "I need help",
             "I'm overwhelmed by everything",
             "I can't handle this alone",
-            "I'm struggling mentally"
+            "I'm struggling mentally",
+            "I can’t keep pretending everything is okay",
+            "No one would care if I vanished"
         ],
         "Low": [
             "Mental health matters",
             "Everyone has tough days",
             "Take care of yourself",
             "I believe in self-care",
-            "Talking helps"
+            "Talking helps",
+            "Feeling off lately",
+            "It's been a rough week"
         ]
     }
 
@@ -161,8 +139,7 @@ def classify_posts_with_bert(source='reddit', extracted_posts_csv=None):
     print(f"Saved: {output_file}")
 
     # Generate distribution report
-    print("Generating distribution report...")
-    # generate_distribution_report(combined_df, output_dir="outputs/distribution", table_filename=f"distribution_table_{len(combined_df)}_{source}_posts_by_semantic_{latest_time_formatted}", plot_filename=f"distribution_plot_{len(combined_df)}_{source}_posts_by_semantic_{latest_time_formatted}.png")
+    generate_distribution_report(input_csv_file=output_file)
 
 # Check command-line arguments
 # if len(sys.argv) != 2 or sys.argv[1] not in ['r', 'x']:

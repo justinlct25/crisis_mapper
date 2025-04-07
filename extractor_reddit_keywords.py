@@ -21,7 +21,19 @@ def extract_reddit_posts_keywords(extracted_posts_csv=None):
         "stopdrinking", "OpiatesRecovery", "Leaves", "REDDITORSINRECOVERY",
         "TeenagersAdvice", "HighSchool", "College",
         "Lonely", "ForeverAloneDating", "Introvert",
-        "UnsentLetters", "JustVent"
+        "UnsentLetters", "JustVent",
+        # --- uk subreddits ---
+        "MentalHealthUk", "UKPersonalFinance", "AskUK",
+        # --- additional subreddits ---
+        "schizophrenia", "bipolar", "OCD", "insomnia", "DPDR",
+        "mentalillnessmemes", "NeedSupport", "TrueLonely",
+        "LetterstoPeople", "CasualConversation", "Assistance",
+        "SupportForBPD", "LonelyPeople", "Alonetogether",
+        "NeedToTalk", "VentToStrangers", "UnfilteredMentalHealth",
+        "LettersToMyself", "Advice", "YoungPeopleAdvice",
+        "TeenProblems", "StudentMentalHealth", "depressionregimens",
+        "ADHD", "alcoholism", "Addiction", "nihilism",
+        "suicidebywords", "offmychestPH"
     ]
 
     keywords = [
@@ -60,44 +72,54 @@ def extract_reddit_posts_keywords(extracted_posts_csv=None):
     for sub_name in subreddits:
         try:
             subreddit = reddit.subreddit(sub_name)
-            next(subreddit.new(limit=1)) # trigger a fetch to check whether the subreddit exists
+            next(subreddit.new(limit=1))  # Trigger a fetch to check whether the subreddit exists
         except Exception as e:
             print(f"Skipping subreddit '{sub_name}' due to error: {e}")
             continue
 
         subreddit = reddit.subreddit(sub_name)
-        count = 0
+        extracted_count = 0
+        skipped_count = 0
 
         # Retry fetching submissions up to 3 times
-        for attempt in range(3): 
+        for attempt in range(3):
             try:
                 for submission in subreddit.new(limit=None):  # Get recent posts
-                    if submission.stickied or submission.removed_by_category:   # Skip pinned or removed posts
-                        continue  
-                    if submission.id in existing_ids:   # Skip posts that already exist in the last extracted file
-                        continue  
+                    if submission.stickied or submission.removed_by_category:  # Skip pinned or removed posts
+                        continue
+                    if submission.id in existing_ids:  # Skip posts that already exist in the last extracted file
+                        skipped_count += 1
+                        
+                        # Jump to the next subreddit if more than 50 posts are skipped
+                        if skipped_count > 50:
+                            print(f"Fetching from r/{sub_name}: {extracted_count} posts added, {skipped_count} skipped.", end='\r')
+                            break
+                        continue
+
                     combined_text = (submission.title or "") + " " + (submission.selftext or "")
                     if any(kw.lower() in combined_text.lower() for kw in keywords):
                         posts_data.append({
                             'subreddit': sub_name,
                             'id': submission.id,
                             'timestamp': datetime.utcfromtimestamp(submission.created_utc),
+                            'title': submission.title,
                             'content': combined_text,
                             'author': str(submission.author),
                             'upvotes': submission.score,
                             'num_comments': submission.num_comments,
                             'url': submission.url
                         })
-                        count += 1
+                        extracted_count += 1
+
                     if len(posts_data) >= total_target:
                         break
-                    print(f"Fetching from r/{sub_name}: {count} posts", end='\r')
-                break 
+                    print(f"Fetching from r/{sub_name}: {extracted_count} posts added", end='\r')
+                break
             except RequestException as e:
                 print(f"Request failed: {e}. Retrying in 5 seconds...")
                 time.sleep(5)
 
-        print(f"Fetched from r/{sub_name}: {count} posts")
+        print(f"Fetched from r/{sub_name}: {extracted_count} posts")
         if len(posts_data) >= total_target:
             break
 

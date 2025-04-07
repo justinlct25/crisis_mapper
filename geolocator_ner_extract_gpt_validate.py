@@ -13,6 +13,7 @@ import os
 from tqdm import tqdm 
 from pathlib import Path
 import tiktoken
+from generator_geolocated_crisis_heatmap import generate_heatmap
 
 # --- Setup ---
 # nlp = spacy.load("en_core_web_sm")
@@ -143,38 +144,6 @@ def geocode_location(name):
         return pd.Series([None, None])
     return pd.Series([None, None])
 
-def generate_heatmap(df, output_file):
-    print("Generating heatmap...")
-    map_ = folium.Map(location=[39.5, -98.35], zoom_start=4)
-    cluster = MarkerCluster(spiderfy_on_max_zoom=True, show_coverage_on_hover=True)
-
-    for _, row in df.iterrows():
-        color = 'yellow'
-        if str(row.get('risk_level_semantic', '')).startswith('High'):
-            color = 'red'
-        elif str(row.get('risk_level_semantic', '')).startswith('Moderate'):
-            color = 'orange'
-
-        popup = f"""
-        <b>Location:</b> {row['validated_location']}<br>
-        <b>Sentiment:</b> {row.get('sentiment', 'N/A')}<br>
-        <b>Risk Level:</b> {row.get('risk_level_semantic', 'N/A')}<br>
-        <b>Date:</b> {row.get('timestamp', 'N/A')}<br>
-        <b>URL:</b> <a href="{row.get('url', '#')}" target="_blank">{row.get('url', '#')}</a>
-        """
-        folium.CircleMarker(
-            location=(row["lat"], row["lon"]),
-            radius=6,
-            color=color,
-            fill=True,
-            fill_opacity=0.7,
-            popup=folium.Popup(popup, max_width=300)
-        ).add_to(cluster)
-
-    cluster.add_to(map_)
-    map_.save(output_file)
-    print(f"Heatmap saved to: {output_file}")
-
 # --- Main Pipeline ---
 def run_geolocation_pipeline(source='reddit', classified_posts_csv=None, geolocation_processed_posts_csv=None):
     latest_classified_file, latest_classified_time = get_latest_file('data/classified_posts', 'classified', specified_file=classified_posts_csv)
@@ -189,15 +158,45 @@ def run_geolocation_pipeline(source='reddit', classified_posts_csv=None, geoloca
     STEP3_OUTPUT_FILE = os.path.join(intermediate_dir, "step3_validated_locations.csv")
     STEP4_OUTPUT_FILE = os.path.join(intermediate_dir, "step4_geocoded_locations.csv")
 
+    # try:
+    #     latest_all_posts_file, _ = get_latest_file('data/geolocated_posts', 'all', specified_file=geolocation_processed_posts_csv)
+    #     print(f"Loading latest all_posts file: {latest_all_posts_file}")
+    #     already_processed_posts_df = pd.read_csv(latest_all_posts_file, comment='#')
+    #     already_geolocated_posts_df = already_processed_posts_df.dropna(subset=["detected_location", "validated_location", "lat", "lon"])
+    #     print(f"Loaded {len(already_geolocated_posts_df)} geolocated posts from all_posts file.")
+    # except FileNotFoundError:
+    #     print("No previously processed all_posts file found. Starting fresh.")
+    #     already_processed_posts_df = pd.DataFrame(columns=classified_df.columns)
+    #     already_geolocated_posts_df = pd.DataFrame(columns=classified_df.columns)
     try:
         latest_all_posts_file, _ = get_latest_file('data/geolocated_posts', 'all', specified_file=geolocation_processed_posts_csv)
         print(f"Loading latest all_posts file: {latest_all_posts_file}")
         already_processed_posts_df = pd.read_csv(latest_all_posts_file, comment='#')
-        already_geolocated_posts_df = already_processed_posts_df.dropna(subset=["detected_location", "validated_location", "lat", "lon"])
+
+        # Merge classified_df to ensure all columns and values are included
+        already_processed_posts_df = classified_df.merge(
+            already_processed_posts_df[["id", "detected_location", "validated_location", "lat", "lon"]],
+            on="id",
+            how="right",
+            suffixes=("", "_geo")
+        )
+
+        # Fill missing geolocation-related values with defaults
+        already_processed_posts_df["detected_location"] = already_processed_posts_df["detected_location"].fillna("Unknown")
+        already_processed_posts_df["validated_location"] = already_processed_posts_df["validated_location"].fillna("Unknown")
+        already_processed_posts_df["lat"] = already_processed_posts_df["lat"].fillna(pd.NA)
+        already_processed_posts_df["lon"] = already_processed_posts_df["lon"].fillna(pd.NA)
+
+        # Retain only geolocated posts for already_geolocated_posts_df
+        already_geolocated_posts_df = already_processed_posts_df.dropna(subset=["lat", "lon"])
         print(f"Loaded {len(already_geolocated_posts_df)} geolocated posts from all_posts file.")
     except FileNotFoundError:
         print("No previously processed all_posts file found. Starting fresh.")
-        already_processed_posts_df = pd.DataFrame(columns=classified_df.columns)
+        already_processed_posts_df = classified_df.copy()
+        already_processed_posts_df["detected_location"] = "Unknown"
+        already_processed_posts_df["validated_location"] = "Unknown"
+        already_processed_posts_df["lat"] = None
+        already_processed_posts_df["lon"] = None
         already_geolocated_posts_df = pd.DataFrame(columns=classified_df.columns)
 
     already_processed_ids = set(already_processed_posts_df['id'])
@@ -217,11 +216,20 @@ def run_geolocation_pipeline(source='reddit', classified_posts_csv=None, geoloca
         gpe_detected_posts_df = pd.read_csv(STEP1_OUTPUT_FILE)
         gpe_detected_posts_df["detected_location"] = gpe_detected_posts_df["detected_location"].apply(eval)
     else:
-        unprocessed_posts_df = unprocessed_posts_df[unprocessed_posts_df["clean_content"].notna()]
-        unprocessed_posts_df["clean_content"] = unprocessed_posts_df["clean_content"].astype(str)
+        # Initialize detected_location as an empty list for all rows
+        unprocessed_posts_df["detected_location"] = [[] for _ in range(len(unprocessed_posts_df))]
+
+        # Extract GPEs for posts with valid content
         unprocessed_posts_df["detected_location"] = [
             extract_gpe(text) for text in tqdm(unprocessed_posts_df["clean_content"], desc="Extracting GPEs with spaCy")
         ]
+
+        # Set detected_location to "None" for posts without any detected GPEs
+        unprocessed_posts_df["detected_location"] = unprocessed_posts_df["detected_location"].apply(
+            lambda x: x if isinstance(x, list) and len(x) > 0 else []
+        )
+
+        # Filter posts with detected GPEs for further processing
         gpe_detected_posts_df = unprocessed_posts_df[
             unprocessed_posts_df["detected_location"].apply(lambda x: isinstance(x, list) and len(x) > 0)
         ]
@@ -274,10 +282,11 @@ def run_geolocation_pipeline(source='reddit', classified_posts_csv=None, geoloca
 
     # Update unprocessed posts
     unprocessed_posts_df = unprocessed_posts_df.copy()
+    unprocessed_posts_df["detected_location"] = [[] for _ in range(len(unprocessed_posts_df))]
     unprocessed_posts_df["validated_location"] = "Unknown"
     unprocessed_posts_df["lat"] = None
     unprocessed_posts_df["lon"] = None
-    gpe_validated_subset = gpe_validated_posts_df[["id", "validated_location", "lat", "lon"]]
+    gpe_validated_subset = gpe_validated_posts_df[["id", "detected_location", "validated_location", "lat", "lon"]]
     unprocessed_posts_df = unprocessed_posts_df.merge(gpe_validated_subset, on="id", how="left", suffixes=("", "_new"))
     for col in ["validated_location", "lat", "lon"]:
         unprocessed_posts_df[col] = unprocessed_posts_df[f"{col}_new"].combine_first(unprocessed_posts_df[col])
@@ -290,11 +299,11 @@ def run_geolocation_pipeline(source='reddit', classified_posts_csv=None, geoloca
     all_posts_df.to_csv(all_posts_output_file, index=False)
     all_posts_df.to_csv(all_posts_output_copy, index=False)
 
-    heatmap_output_file = f"outputs/heatmap/crisis_heatmap_{len(combined_geolocated_posts_df)}_{source}_posts_by_ner_detect_gpt_validate_{latest_classified_time}.html"
+    heatmap_output_file = f"outputs/heatmap/crisis_heatmap_geolocated_{len(combined_geolocated_posts_df)}_{source}_posts_by_ner_detect_gpt_validate_{latest_classified_time}.html"
     heatmap_output_copy = os.path.join(intermediate_dir, os.path.basename(heatmap_output_file))
 
-    generate_heatmap(combined_geolocated_posts_df, output_file=heatmap_output_file)
-    generate_heatmap(combined_geolocated_posts_df, output_file=heatmap_output_copy)
+    generate_heatmap(geolocated_only_posts_output_file, output_file=heatmap_output_file)
+    generate_heatmap(geolocated_only_posts_output_file, output_file=heatmap_output_copy)
 
 # --- Execute ---
 if __name__ == "__main__":
