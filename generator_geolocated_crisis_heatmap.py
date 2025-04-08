@@ -10,19 +10,18 @@ def generate_heatmap(input_data, output_file=None):
         input_data (str or pd.DataFrame): Path to the CSV file containing geolocated posts or a DataFrame.
         output_file (str): Path to save the generated heatmap HTML file. Defaults to "crisis_heatmap_<input_file_name>.html".
     """
-    # Load data based on the type of input
+
     if isinstance(input_data, str):  # If input is a CSV file path
         print("Loading data from CSV file...")
         df = pd.read_csv(input_data, comment='#')
         input_file_name = input_data.split("/")[-1].replace(".csv", "")
-    elif isinstance(input_data, pd.DataFrame):  # If input is a DataFrame
+    elif isinstance(input_data, pd.DataFrame):  
         print("Loading data from DataFrame...")
         df = input_data
         input_file_name = "dataframe_input"
     else:
         raise ValueError("Input must be a file path (str) or a pandas DataFrame.")
 
-    # Set default output file name if not provided
     if output_file is None:
         output_file = f"outputs/heatmap/crisis_heatmap_{input_file_name}.html"
 
@@ -48,7 +47,8 @@ def generate_heatmap(input_data, output_file=None):
                 <b>Sentiment:</b> {row.get('sentiment', 'N/A')}<br>
                 <b>Risk Level:</b> {row.get('risk_level_semantic', 'N/A')}<br>
                 <b>Date:</b> {row.get('timestamp', 'N/A')}<br>
-                <b>Post ID:</b> {row['id']}<br>
+                <b>ID:</b> {row['id']}<br>
+                <b>Title:</b> {row.get('title', 'N/A')}<br>
                 <b>URL:</b> <a href="{row.get('url', '#')}" target="_blank">{row.get('url', '#')}</a>
             </div>
             """,

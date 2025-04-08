@@ -1,4 +1,3 @@
-# Import the necessary modules
 from extractor_reddit_keywords import extract_reddit_posts_keywords
 from classifier_semantic import classify_posts_with_bert
 from geolocator_ner_extract_gpt_validate import run_geolocation_pipeline
@@ -30,10 +29,6 @@ def run_pipeline():
     except Exception as e:
         print(f"❌ Error during geolocation: {e}")
         return
-    
-    # classify_posts_with_bert(classified_posts_csv='asef')
-    # run_geolocation_pipeline(classified_posts_csv="data/classified_posts/classified_23431_reddit_posts_by_semantic_20250407_004759.csv", geolocation_processed_posts_csv="fasdklfj")
-    # run_geolocation_pipeline()
 
 if __name__ == "__main__":
     run_pipeline()

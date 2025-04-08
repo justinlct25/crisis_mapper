@@ -85,9 +85,11 @@ def extract_reddit_posts_keywords(extracted_posts_csv=None):
         for attempt in range(3):
             try:
                 for submission in subreddit.new(limit=None):  # Get recent posts
-                    if submission.stickied or submission.removed_by_category:  # Skip pinned or removed posts
+                    # Skip pinned or removed posts
+                    if submission.stickied or submission.removed_by_category:  
                         continue
-                    if submission.id in existing_ids:  # Skip posts that already exist in the last extracted file
+                    # Skip posts that already exist in the last extracted file
+                    if submission.id in existing_ids:  
                         skipped_count += 1
                         
                         # Jump to the next subreddit if more than 50 posts are skipped

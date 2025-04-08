@@ -7,8 +7,6 @@ from tqdm import tqdm
 import torch
 from datetime import datetime
 import sys
-import matplotlib.pyplot as plt
-import seaborn as sns
 from generator_risk_sentiment_distribution import generate_distribution_report
 
 def vader_avg_sentiment(text):
@@ -43,7 +41,6 @@ def classify_posts_with_bert(source='reddit', extracted_posts_csv=None, classifi
         print("No new posts to classify after filtering. Exiting.")
         return
     
-    # Filter out rows with missing or invalid clean_content
     new_posts_df = new_posts_df[new_posts_df['clean_content'].notna()]  
     new_posts_df = new_posts_df[new_posts_df['clean_content'].str.strip() != ""]  
     print(f"Filtered down to {len(new_posts_df)} posts with valid content.")
@@ -83,7 +80,6 @@ def classify_posts_with_bert(source='reddit', extracted_posts_csv=None, classifi
         ]
     }
 
-    # Flatten examples and store labels
     example_texts = []
     example_labels = []
 
@@ -127,7 +123,6 @@ def classify_posts_with_bert(source='reddit', extracted_posts_csv=None, classifi
     ]
     new_posts_df['similarity_score'] = similarity_scores
 
-    # Add VADER sentiment scores
     print("Computing VADER sentiment scores...")
     new_posts_df['sentiment'] = [
         vader_avg_sentiment(text) for text in tqdm(new_posts_df['clean_content'], desc="Computing VADER sentiment")
@@ -147,7 +142,6 @@ def classify_posts_with_bert(source='reddit', extracted_posts_csv=None, classifi
         combined_df.to_csv(f, index=False)
     print(f"Saved: {output_file}")
 
-    # Generate distribution report
     generate_distribution_report(input_csv_file=output_file)
 
 # Check command-line arguments
