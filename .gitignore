@@ -13,7 +13,8 @@ env/
 .DS_Store
 
 # ignore data and output folders
-data/classified_posts/
-data/extracted_posts/
-data/geolocated_posts/
-outputs/
+data/classified_posts/*
+data/extracted_posts/*
+data/geolocated_posts/*
+outputs/distribution/*
+outputs/heatmap/*
