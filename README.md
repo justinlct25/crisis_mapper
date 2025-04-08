@@ -34,7 +34,7 @@ Replace `<your_reddit_username>`, `<your_reddit_password>`, `<your_reddit_client
 To run the pipeline, execute the following command in your terminal:
 
 ```bash
-python main.py
+python pipeline_function_runner.py
 ```
 
 This will start the process of collecting data from Reddit and analyzing it using OpenAI's API.
