@@ -115,7 +115,15 @@ If no location fits the above criteria, return "Unknown".
                 temperature=0,
             )
             reply = response.choices[0].message.content.strip().split("\n")
-            parsed = [line.split(". ", 1)[-1].strip() if ". " in line else "Unknown" for line in reply]
+            parsed = []
+            for line in reply:
+                line = line.strip()
+                if not line:
+                    parsed.append("Unknown")
+                elif ". " in line:
+                    parsed.append(line.split(". ", 1)[-1].strip())
+                else:
+                    parsed.append(line)
             if len(parsed) == len(batch):
                 if attempt > 0:
                     print(f"✅ Reattempt {attempt} successful for batch of size {len(batch)}.")
@@ -158,48 +166,39 @@ def run_geolocation_pipeline(source='reddit', classified_posts_csv=None, geoloca
     STEP3_OUTPUT_FILE = os.path.join(intermediate_dir, "step3_validated_locations.csv")
     STEP4_OUTPUT_FILE = os.path.join(intermediate_dir, "step4_geocoded_locations.csv")
 
-    # try:
-    #     latest_all_posts_file, _ = get_latest_file('data/geolocated_posts', 'all', specified_file=geolocation_processed_posts_csv)
-    #     print(f"Loading latest all_posts file: {latest_all_posts_file}")
-    #     already_processed_posts_df = pd.read_csv(latest_all_posts_file, comment='#')
-    #     already_geolocated_posts_df = already_processed_posts_df.dropna(subset=["detected_location", "validated_location", "lat", "lon"])
-    #     print(f"Loaded {len(already_geolocated_posts_df)} geolocated posts from all_posts file.")
-    # except FileNotFoundError:
-    #     print("No previously processed all_posts file found. Starting fresh.")
-    #     already_processed_posts_df = pd.DataFrame(columns=classified_df.columns)
-    #     already_geolocated_posts_df = pd.DataFrame(columns=classified_df.columns)
     try:
         latest_all_posts_file, _ = get_latest_file('data/geolocated_posts', 'all', specified_file=geolocation_processed_posts_csv)
         print(f"Loading latest all_posts file: {latest_all_posts_file}")
-        already_processed_posts_df = pd.read_csv(latest_all_posts_file, comment='#')
+        geo_processed_posts_df = pd.read_csv(latest_all_posts_file, comment='#')
 
         # Merge classified_df to ensure all columns and values are included
-        already_processed_posts_df = classified_df.merge(
-            already_processed_posts_df[["id", "detected_location", "validated_location", "lat", "lon"]],
+
+        geo_processed_posts_df = classified_df.merge(
+            geo_processed_posts_df[["id", "detected_location", "validated_location", "lat", "lon"]],
             on="id",
             how="right",
             suffixes=("", "_geo")
         )
 
         # Fill missing geolocation-related values with defaults
-        already_processed_posts_df["detected_location"] = already_processed_posts_df["detected_location"].fillna("Unknown")
-        already_processed_posts_df["validated_location"] = already_processed_posts_df["validated_location"].fillna("Unknown")
-        already_processed_posts_df["lat"] = already_processed_posts_df["lat"].fillna(pd.NA)
-        already_processed_posts_df["lon"] = already_processed_posts_df["lon"].fillna(pd.NA)
+        geo_processed_posts_df["detected_location"] = geo_processed_posts_df["detected_location"].fillna("Unknown")
+        geo_processed_posts_df["validated_location"] = geo_processed_posts_df["validated_location"].fillna("Unknown")
+        geo_processed_posts_df["lat"] = geo_processed_posts_df["lat"].fillna(pd.NA)
+        geo_processed_posts_df["lon"] = geo_processed_posts_df["lon"].fillna(pd.NA)
 
         # Retain only geolocated posts for already_geolocated_posts_df
-        already_geolocated_posts_df = already_processed_posts_df.dropna(subset=["lat", "lon"])
+        already_geolocated_posts_df = geo_processed_posts_df.dropna(subset=["lat", "lon"])
         print(f"Loaded {len(already_geolocated_posts_df)} geolocated posts from all_posts file.")
     except FileNotFoundError:
         print("No previously processed all_posts file found. Starting fresh.")
-        already_processed_posts_df = classified_df.copy()
-        already_processed_posts_df["detected_location"] = "Unknown"
-        already_processed_posts_df["validated_location"] = "Unknown"
-        already_processed_posts_df["lat"] = None
-        already_processed_posts_df["lon"] = None
+        geo_processed_posts_df = classified_df.copy()
+        geo_processed_posts_df["detected_location"] = "Unknown"
+        geo_processed_posts_df["validated_location"] = "Unknown"
+        geo_processed_posts_df["lat"] = None
+        geo_processed_posts_df["lon"] = None
         already_geolocated_posts_df = pd.DataFrame(columns=classified_df.columns)
 
-    already_processed_ids = set(already_processed_posts_df['id'])
+    already_processed_ids = set(geo_processed_posts_df['id'])
     unprocessed_posts_df = classified_df[~classified_df['id'].isin(already_processed_ids)]
     print(f"Found {len(unprocessed_posts_df)} new posts to process.")
 
@@ -251,9 +250,6 @@ def run_geolocation_pipeline(source='reddit', classified_posts_csv=None, geoloca
             time.sleep(random.uniform(0.3, 0.8))
         gpe_validated_posts_df = gpe_detected_posts_df.copy()
         gpe_validated_posts_df["validated_location"] = validated_locations
-        gpe_validated_posts_df = gpe_validated_posts_df[
-            gpe_validated_posts_df["validated_location"].str.lower() != "unknown"
-        ]
         gpe_validated_posts_df.to_csv(STEP3_OUTPUT_FILE, index=False)
 
     # --- Step 4: Geocoding ---
@@ -292,7 +288,7 @@ def run_geolocation_pipeline(source='reddit', classified_posts_csv=None, geoloca
         unprocessed_posts_df[col] = unprocessed_posts_df[f"{col}_new"].combine_first(unprocessed_posts_df[col])
         unprocessed_posts_df.drop(columns=[f"{col}_new"], inplace=True)
 
-    all_posts_df = pd.concat([already_processed_posts_df, unprocessed_posts_df], ignore_index=True)
+    all_posts_df = pd.concat([geo_processed_posts_df, unprocessed_posts_df], ignore_index=True)
     all_posts_output_file = f"data/geolocated_posts/all_{len(all_posts_df)}_{source}_posts_by_ner_detect_gpt_validate_{latest_classified_time}.csv"
     all_posts_output_copy = os.path.join(intermediate_dir, os.path.basename(all_posts_output_file))
 

@@ -21,7 +21,7 @@ def vader_avg_sentiment(text):
 
 def classify_posts_with_bert(source='reddit', extracted_posts_csv=None, classified_posts_csv=None):
     # Load the latest extracted posts file
-    latest_extracted_file, latest_time_formatted = get_latest_file('data/extracted_posts', 'extracted', extracted_posts_csv)
+    latest_extracted_file, extraction_time = get_latest_file('data/extracted_posts', 'extracted', extracted_posts_csv)
     print(f"Loading latest extracted posts file: {latest_extracted_file}")
     extracted_df = pd.read_csv(latest_extracted_file, comment='#')
 
@@ -104,19 +104,28 @@ def classify_posts_with_bert(source='reddit', extracted_posts_csv=None, classifi
         post_embeddings.append(model.encode(text, convert_to_tensor=True))
     post_embeddings = torch.stack(post_embeddings)
 
+    similarity_threshold = 0.26
+    kept_indices = []
     predicted_labels = []
     similarity_scores = []
 
-    for post_emb in tqdm(post_embeddings, desc="Classifying posts by risk level using semantic similarity"):
+    for i, post_emb in enumerate(tqdm(post_embeddings, desc="Classifying posts by risk level using semantic similarity")):
         scores = util.cos_sim(post_emb, example_embeddings)[0]
-        best_idx = scores.argmax().item()
-        predicted_labels.append(example_labels[best_idx])
-        similarity_scores.append(float(scores[best_idx]))
+        max_score = scores.max().item()
+        if max_score >= similarity_threshold:
+            best_idx = scores.argmax().item()
+            predicted_labels.append(example_labels[best_idx])
+            similarity_scores.append(round(max_score, 2))
+            kept_indices.append(i)
+    
+    print(f"Filtered out {len(post_embeddings) - len(kept_indices)} posts below similarity threshold ({similarity_threshold}).")
 
     # Combine predicted labels and rounded similarity scores into a single column
+    new_posts_df = new_posts_df.iloc[kept_indices].copy()
     new_posts_df['risk_level_semantic'] = [
-        f"{label} ({round(score, 2)})" for label, score in zip(predicted_labels, similarity_scores)
+        f"{label} ({score})" for label, score in zip(predicted_labels, similarity_scores)
     ]
+    new_posts_df['similarity_score'] = similarity_scores
 
     # Add VADER sentiment scores
     print("Computing VADER sentiment scores...")
@@ -132,7 +141,7 @@ def classify_posts_with_bert(source='reddit', extracted_posts_csv=None, classifi
               [col for col in combined_df.columns if col not in ['id', 'timestamp', 'sentiment', 'risk_level_semantic']]
     combined_df = combined_df[columns]
 
-    output_file = f"data/classified_posts/classified_{len(combined_df)}_{source}_posts_by_semantic_{latest_time_formatted}.csv"
+    output_file = f"data/classified_posts/classified_{len(combined_df)}_{source}_posts_by_semantic_extracted_at_{extraction_time}.csv"
     with open(output_file, 'w') as f:
         f.write(f"# Extracted posts file: {latest_extracted_file}\n")
         combined_df.to_csv(f, index=False)

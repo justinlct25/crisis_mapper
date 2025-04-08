@@ -65,6 +65,49 @@ def get_latest_file(directory, prefix, specified_file=None):
     extracted_files.sort(key=lambda x: (x[1], x[2]), reverse=True)
 
     # Select the latest file
-    latest_file, _, _ = extracted_files[0]
-    formatted_time = datetime.fromtimestamp(os.path.getmtime(latest_file)).strftime('%Y%m%d_%H%M%S')
-    return latest_file, formatted_time
+    latest_file, _, timestamp = extracted_files[0]
+    return latest_file, timestamp.strftime('%Y%m%d_%H%M%S')
+
+
+def save_dataframe_with_metadata(df, output_file, metadata=None, copy_file=None):
+    """
+    Save a DataFrame to a CSV file with metadata at the top.
+
+    Args:
+        df (pd.DataFrame): The DataFrame to save.
+        output_file (str): The path to the output CSV file.
+        metadata (dict): A dictionary of metadata to write as comments.
+        copy_file (str, optional): If provided, saves a copy of the file to this path.
+    """
+    with open(output_file, 'w') as f:
+        if metadata:
+            for key, value in metadata.items():
+                f.write(f"# {key}: {value}\n")
+        df.to_csv(f, index=False)
+    print(f"Saved: {output_file}")
+
+    if copy_file:
+        with open(copy_file, 'w') as f:
+            if metadata:
+                for key, value in metadata.items():
+                    f.write(f"# {key}: {value}\n")
+            df.to_csv(f, index=False)
+        print(f"Copied to: {copy_file}")
+
+def get_metadata_from_classified_file(classified_posts_file, key):
+    """
+    Extract the value of a specific metadata key from the classified posts file.
+
+    Args:
+        classified_posts_file (str): Path to the classified posts CSV file.
+        key (str): The metadata key to extract (e.g., "Extracted posts file").
+
+    Returns:
+        str: The value of the metadata key, or None if the key is not found.
+    """
+    with open(classified_posts_file, 'r') as f:
+        for line in f:
+            if line.startswith(f"# {key}:"):
+                # Extract the value after the colon
+                return line.split(":", 1)[1].strip()
+    return None

@@ -9,7 +9,7 @@ def run_pipeline():
     """
     try:
         print("Step 1: Extracting Reddit posts...")
-        # extract_reddit_posts_keywords()
+        extract_reddit_posts_keywords()
         print("✅ Extraction completed.")
     except Exception as e:
         print(f"❌ Error during extraction: {e}")

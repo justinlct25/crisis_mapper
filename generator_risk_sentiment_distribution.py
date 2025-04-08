@@ -95,7 +95,7 @@ def generate_distribution_report(input_csv_file, output_dir="outputs/distributio
         plt.xlabel("Sentiment Score")
         plt.ylabel("Risk Category")
         plt.grid(True, axis='x')
-        plt.yticks(ticks=range(len(y_labels)), labels=y_labels)  # Add counts to y-axis labels
+        plt.yticks(ticks=range(len(y_labels)), labels=y_labels)  
         plt.tight_layout()
 
         box_plot_filename = f"boxplot_sentiment_vs_risk_{input_base}.png"
@@ -104,6 +104,7 @@ def generate_distribution_report(input_csv_file, output_dir="outputs/distributio
         plt.close()
         print(f"✅ Box plot saved to: {box_plot_file}")
         pbar.update(1)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate sentiment-risk distribution report from CSV.")

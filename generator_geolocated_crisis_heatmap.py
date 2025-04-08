@@ -2,20 +2,28 @@ import folium
 from folium.plugins import MarkerCluster
 import pandas as pd
 
-def generate_heatmap(input_csv_file, output_file=None):
+def generate_heatmap(input_data, output_file=None):
     """
     Generate a heatmap from geolocated posts.
     
     Args:
-        input_csv_file (str): Path to the CSV file containing geolocated posts.
+        input_data (str or pd.DataFrame): Path to the CSV file containing geolocated posts or a DataFrame.
         output_file (str): Path to save the generated heatmap HTML file. Defaults to "crisis_heatmap_<input_file_name>.html".
     """
-    print("Loading data...")
-    df = pd.read_csv(input_csv_file, comment='#')
+    # Load data based on the type of input
+    if isinstance(input_data, str):  # If input is a CSV file path
+        print("Loading data from CSV file...")
+        df = pd.read_csv(input_data, comment='#')
+        input_file_name = input_data.split("/")[-1].replace(".csv", "")
+    elif isinstance(input_data, pd.DataFrame):  # If input is a DataFrame
+        print("Loading data from DataFrame...")
+        df = input_data
+        input_file_name = "dataframe_input"
+    else:
+        raise ValueError("Input must be a file path (str) or a pandas DataFrame.")
 
     # Set default output file name if not provided
     if output_file is None:
-        input_file_name = input_csv_file.split("/")[-1].replace(".csv", "")
         output_file = f"outputs/heatmap/crisis_heatmap_{input_file_name}.html"
 
     print("Generating heatmap...")
