@@ -4,7 +4,7 @@ import config
 import time
 import random
 from openai import OpenAI
-from helper import get_latest_file
+from helper import get_latest_file, save_dataframe_with_metadata, get_metadata_from_classified_file
 from datetime import datetime
 from geopy.geocoders import Nominatim
 import folium
@@ -162,6 +162,12 @@ def run_geolocation_pipeline(source='reddit', classified_posts_csv=None, geoloca
     intermediate_dir = f"data/geolocated_posts/geolocation_process_{classified_filename}"
     os.makedirs(intermediate_dir, exist_ok=True)
 
+    extracted_posts_file = get_metadata_from_classified_file(latest_classified_file, "Extracted posts file")
+    metadata = {
+        "Extracted posts file": extracted_posts_file,
+        "Classified posts file": latest_classified_file
+    }
+
     STEP1_OUTPUT_FILE = os.path.join(intermediate_dir, "step1_gpe_detected.csv")
     STEP3_OUTPUT_FILE = os.path.join(intermediate_dir, "step3_validated_locations.csv")
     STEP4_OUTPUT_FILE = os.path.join(intermediate_dir, "step4_geocoded_locations.csv")
@@ -171,14 +177,26 @@ def run_geolocation_pipeline(source='reddit', classified_posts_csv=None, geoloca
         print(f"Loading latest all_posts file: {latest_all_posts_file}")
         geo_processed_posts_df = pd.read_csv(latest_all_posts_file, comment='#')
 
-        # Merge classified_df to ensure all columns and values are included
+        # Ensure required columns exist in geo_processed_posts_df
+        required_columns = ["id", "detected_location", "validated_location", "lat", "lon"]
+        for col in required_columns:
+            if col not in geo_processed_posts_df.columns:
+                geo_processed_posts_df[col] = None
 
-        geo_processed_posts_df = classified_df.merge(
-            geo_processed_posts_df[["id", "detected_location", "validated_location", "lat", "lon"]],
-            on="id",
-            how="right",
-            suffixes=("", "_geo")
-        )
+        if len(classified_df) >= len(geo_processed_posts_df):
+            geo_processed_posts_df = classified_df.merge(
+                geo_processed_posts_df[required_columns],
+                on="id",
+                how="right",
+                suffixes=("", "_geo")
+            )
+        else:
+            geo_processed_posts_df = geo_processed_posts_df.merge(
+                classified_df,
+                on="id",
+                how="left",
+                suffixes=("_geo", "")
+            )
 
         # Fill missing geolocation-related values with defaults
         geo_processed_posts_df["detected_location"] = geo_processed_posts_df["detected_location"].fillna("Unknown")
@@ -204,10 +222,25 @@ def run_geolocation_pipeline(source='reddit', classified_posts_csv=None, geoloca
 
     if unprocessed_posts_df.empty:
         print("No new posts to process. Generating heatmap for existing geolocated posts.")
-        generate_heatmap(
-            already_geolocated_posts_df,
-            output_file=f"outputs/heatmap/crisis_heatmap_{len(already_geolocated_posts_df)}_{source}_posts.html"
-        )
+        already_geolocated_posts_df.to_csv(STEP1_OUTPUT_FILE, index=False)
+        already_geolocated_posts_df.to_csv(STEP3_OUTPUT_FILE, index=False)
+        already_geolocated_posts_df.to_csv(STEP4_OUTPUT_FILE, index=False)
+
+        all_posts_df = geo_processed_posts_df.copy()
+        all_posts_output_file = f"data/geolocated_posts/all_{len(all_posts_df)}_{source}_posts_by_ner_detect_gpt_validate_{latest_classified_time}.csv"
+        all_posts_output_copy = os.path.join(intermediate_dir, os.path.basename(all_posts_output_file))
+        save_dataframe_with_metadata(all_posts_df, all_posts_output_file, metadata, copy_file=all_posts_output_copy)
+
+        geolocated_only_posts_output_file = f"data/geolocated_posts/geolocated_{len(already_geolocated_posts_df)}_{source}_posts_by_ner_detect_gpt_validate_{latest_classified_time}.csv"
+        geolocated_only_posts_output_copy = os.path.join(intermediate_dir, os.path.basename(geolocated_only_posts_output_file))
+        save_dataframe_with_metadata(already_geolocated_posts_df, geolocated_only_posts_output_file, metadata, copy_file=geolocated_only_posts_output_copy)
+
+        heatmap_output_file = f"outputs/heatmap/crisis_heatmap_geolocated_{len(already_geolocated_posts_df)}_{source}_posts_by_ner_detect_gpt_validate_{latest_classified_time}.html"
+        heatmap_output_copy = os.path.join(intermediate_dir, os.path.basename(heatmap_output_file))
+        generate_heatmap(already_geolocated_posts_df, output_file=heatmap_output_file)
+        generate_heatmap(already_geolocated_posts_df, output_file=heatmap_output_copy)
+
+        print(f"All outputs generated using existing geolocated posts.")
         return
 
     # --- Step 1: Extract GPEs ---
@@ -269,12 +302,9 @@ def run_geolocation_pipeline(source='reddit', classified_posts_csv=None, geoloca
     # --- Save Results ---
     # Combine newly geolocated posts with previously geolocated posts
     combined_geolocated_posts_df = pd.concat([gpe_validated_posts_df, already_geolocated_posts_df], ignore_index=True)
-
     geolocated_only_posts_output_file = f"data/geolocated_posts/geolocated_{len(combined_geolocated_posts_df)}_{source}_posts_by_ner_detect_gpt_validate_{latest_classified_time}.csv"
     geolocated_only_posts_output_copy = os.path.join(intermediate_dir, os.path.basename(geolocated_only_posts_output_file))
-
-    combined_geolocated_posts_df.to_csv(geolocated_only_posts_output_file, index=False)
-    combined_geolocated_posts_df.to_csv(geolocated_only_posts_output_copy, index=False)
+    save_dataframe_with_metadata(combined_geolocated_posts_df, geolocated_only_posts_output_file, metadata, copy_file=geolocated_only_posts_output_copy)
 
     # Update unprocessed posts
     unprocessed_posts_df = unprocessed_posts_df.copy()
@@ -292,12 +322,12 @@ def run_geolocation_pipeline(source='reddit', classified_posts_csv=None, geoloca
     all_posts_output_file = f"data/geolocated_posts/all_{len(all_posts_df)}_{source}_posts_by_ner_detect_gpt_validate_{latest_classified_time}.csv"
     all_posts_output_copy = os.path.join(intermediate_dir, os.path.basename(all_posts_output_file))
 
-    all_posts_df.to_csv(all_posts_output_file, index=False)
-    all_posts_df.to_csv(all_posts_output_copy, index=False)
+    all_posts_output_file = f"data/geolocated_posts/all_{len(all_posts_df)}_{source}_posts_by_ner_detect_gpt_validate_{latest_classified_time}.csv"
+    all_posts_output_copy = os.path.join(intermediate_dir, os.path.basename(all_posts_output_file))
+    save_dataframe_with_metadata(all_posts_df, all_posts_output_file, metadata, copy_file=all_posts_output_copy)
 
     heatmap_output_file = f"outputs/heatmap/crisis_heatmap_geolocated_{len(combined_geolocated_posts_df)}_{source}_posts_by_ner_detect_gpt_validate_{latest_classified_time}.html"
     heatmap_output_copy = os.path.join(intermediate_dir, os.path.basename(heatmap_output_file))
-
     generate_heatmap(geolocated_only_posts_output_file, output_file=heatmap_output_file)
     generate_heatmap(geolocated_only_posts_output_file, output_file=heatmap_output_copy)
 
